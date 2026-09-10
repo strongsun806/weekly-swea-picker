@@ -9,7 +9,6 @@ import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 WEBHOOK_URL = os.environ.get("MATTERMOST_WEBHOOK_URL")
@@ -80,11 +79,12 @@ def collect_problems():
                 driver.get(url)
 
                 WebDriverWait(driver, 20).until(
-                    lambda browser: re.search(
-                        r"\b\d{4,}\.",
-                        browser.find_element(By.TAG_NAME, "body").text,
-                    )
-                    is not None
+                    lambda browser: len(
+                        extract_problems_from_page(
+                            BeautifulSoup(browser.page_source, "html.parser"),
+                            level,
+                        )
+                    ) > 0
                 )
 
                 soup = BeautifulSoup(driver.page_source, "html.parser")

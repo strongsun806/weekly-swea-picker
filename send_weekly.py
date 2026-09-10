@@ -28,14 +28,14 @@ def extract_problems_from_page(soup, expected_level):
     problems = []
 
     for index, line in enumerate(lines):
-        match = re.match(r"^(\d+)\.\s*(.+?)(?:\s*\[\d+\])?$", line)
+        id_match = re.match(r"^(\d+)\.$", line)
 
-        if not match:
+        if not id_match or index + 1 >= len(lines):
             continue
 
-        problem_id = match.group(1)
-        title = match.group(2).strip()
-        nearby_text = " ".join(lines[index + 1:index + 4])
+        problem_id = id_match.group(1)
+        title = re.sub(r"\s*\[\d+\]\s*$", "", lines[index + 1]).strip()
+        nearby_text = " ".join(lines[index + 2:index + 6])
 
         if expected_level not in nearby_text:
             continue

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   send-message:
@@ -22,7 +22,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: 필요한 도구 설치
+        run: pip install -r requirements.txt
+
       - name: Mattermost에 이번 주 문제 전송
         env:
           MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
         run: python send_weekly.py
+
+      - name: 추천 이력 저장
+        run: |
+          git config user.name "weekly-swea-picker[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add history.json
+          git diff --cached --quiet || git commit -m "chore: save weekly SWEA history"
+          git push

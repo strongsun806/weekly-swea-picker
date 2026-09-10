@@ -1,4 +1,4 @@
-# 🤖 Weekly SWEA Picker
+# 🤖 Weekly SWEA Picker !!
 
 매주 월요일 오전 7시(KST)에 **SWEA D2~D4 난이도 문제 중 3개를 랜덤으로 선정**하여 Mattermost 알고리즘 스터디 채널에 자동으로 공지하는 봇입니다.
 

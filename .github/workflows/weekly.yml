@@ -2,8 +2,10 @@ name: Send weekly SWEA problems
 
 on:
   schedule:
-    # UTC 일요일 22:00 = 한국 월요일 07:00
+    # UTC 일요일 22:00 = 한국 시간 월요일 07:00
     - cron: "0 22 * * 0"
+
+  # GitHub Actions 화면에서 수동으로 실행할 수 있도록 설정
   workflow_dispatch:
 
 permissions:
@@ -14,26 +16,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 저장소 코드 가져오기
       - name: 저장소 코드 가져오기
         uses: actions/checkout@v4
 
+      # Python 준비
       - name: Python 준비
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      # 필요한 Python 패키지 설치
       - name: 필요한 도구 설치
         run: pip install -r requirements.txt
 
+      # Mattermost에 이번 주 문제 전송
       - name: Mattermost에 이번 주 문제 전송
         env:
           MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
         run: python send_weekly.py
 
+      # 이번 주 추천 이력 저장
       - name: 추천 이력 저장
         run: |
           git config user.name "weekly-swea-picker[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add history.json
+
           git diff --cached --quiet || git commit -m "chore: save weekly SWEA history"
+
           git push

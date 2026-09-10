@@ -7,16 +7,16 @@ from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
 
 WEBHOOK_URL = os.environ.get("MATTERMOST_WEBHOOK_URL")
 HISTORY_FILE = Path(__file__).with_name("history.json")
 BASE_URL = "https://swexpertacademy.com"
 LEVELS = ("D2", "D3", "D4")
 MAX_PAGES_PER_LEVEL = 100
-
-HEADERS = {
-    "User-Agent": "weekly-swea-picker/1.0 (study reminder bot)"
-}
 
 
 def extract_problems_from_page(soup, expected_level):
@@ -59,40 +59,54 @@ def extract_problems_from_page(soup, expected_level):
 def collect_problems():
     problems_by_id = {}
 
-    for level in LEVELS:
-        level_number = level[1:]
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
 
-        for page_index in range(1, MAX_PAGES_PER_LEVEL + 1):
-            response = requests.get(
-                f"{BASE_URL}/main/code/problem/problemList.do",
-                params={
-                    "pageSize": 30,
-                    "pageIndex": page_index,
-                    "problemLevel": level_number,
-                },
-                headers=HEADERS,
-                timeout=20,
-            )
-            response.raise_for_status()
+    driver = webdriver.Chrome(options=options)
 
-            print(f"{level} / {page_index}: HTTP {response.status_code}, {len(response.text)} bytes")
-            print(response.text[:500])
+    try:
+        for level in LEVELS:
+            level_number = level[1:]
 
-            
+            for page_index in range(1, MAX_PAGES_PER_LEVEL + 1):
+                url = (
+                    f"{BASE_URL}/main/code/problem/problemList.do"
+                    f"?pageSize=30&pageIndex={page_index}"
+                    f"&problemLevel={level_number}"
+                )
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            page_problems = extract_problems_from_page(soup, level)
+                driver.get(url)
 
-            new_problems = [
-                problem for problem in page_problems
-                if problem["id"] not in problems_by_id
-            ]
+                WebDriverWait(driver, 20).until(
+                    lambda browser: re.search(
+                        r"\b\d{4,}\.",
+                        browser.find_element(By.TAG_NAME, "body").text,
+                    )
+                    is not None
+                )
 
-            for problem in new_problems:
-                problems_by_id[problem["id"]] = problem
+                soup = BeautifulSoup(driver.page_source, "html.parser")
+                page_problems = extract_problems_from_page(soup, level)
 
-            if not new_problems:
-                break
+                new_problems = [
+                    problem for problem in page_problems
+                    if problem["id"] not in problems_by_id
+                ]
+
+                for problem in new_problems:
+                    problems_by_id[problem["id"]] = problem
+
+                if not new_problems:
+                    break
+
+    except TimeoutException as error:
+        raise ValueError("SWEA 문제 목록을 불러오는 시간이 초과되었습니다.") from error
+    except WebDriverException as error:
+        raise ValueError("SWEA 목록을 읽을 브라우저를 실행하지 못했습니다.") from error
+    finally:
+        driver.quit()
 
     problems = list(problems_by_id.values())
 

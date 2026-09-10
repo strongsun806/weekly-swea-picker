@@ -1,0 +1,28 @@
+name: Send weekly SWEA problems
+
+on:
+  schedule:
+    # UTC 일요일 22:00 = 한국 월요일 07:00
+    - cron: "0 22 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send-message:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Mattermost에 이번 주 문제 전송
+        env:
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+        run: python send_weekly.py

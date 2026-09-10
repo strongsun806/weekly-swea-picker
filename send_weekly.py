@@ -75,6 +75,11 @@ def collect_problems():
             )
             response.raise_for_status()
 
+            print(f"{level} / {page_index}: HTTP {response.status_code}, {len(response.text)} bytes")
+            print(response.text[:500])
+
+            
+
             soup = BeautifulSoup(response.text, "html.parser")
             page_problems = extract_problems_from_page(soup, level)
 

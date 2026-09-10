@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 
 import requests
-from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 WEBHOOK_URL = os.environ.get("MATTERMOST_WEBHOOK_URL")
@@ -18,10 +18,10 @@ LEVELS = ("D2", "D3", "D4")
 MAX_PAGES_PER_LEVEL = 100
 
 
-def extract_problems_from_page(soup, expected_level):
+def extract_problems_from_text(page_text, expected_level):
     lines = [
         line.strip()
-        for line in soup.get_text("\n").splitlines()
+        for line in page_text.splitlines()
         if line.strip()
     ]
 
@@ -35,7 +35,7 @@ def extract_problems_from_page(soup, expected_level):
 
         problem_id = id_match.group(1)
         title = re.sub(r"\s*\[\d+\]\s*$", "", lines[index + 1]).strip()
-        nearby_text = " ".join(lines[index + 2:index + 6])
+        nearby_text = " ".join(lines[index + 2:index + 8])
 
         if expected_level not in nearby_text:
             continue
@@ -80,15 +80,15 @@ def collect_problems():
 
                 WebDriverWait(driver, 20).until(
                     lambda browser: len(
-                        extract_problems_from_page(
-                            BeautifulSoup(browser.page_source, "html.parser"),
+                        extract_problems_from_text(
+                            browser.find_element(By.TAG_NAME, "body").text,
                             level,
                         )
                     ) > 0
                 )
 
-                soup = BeautifulSoup(driver.page_source, "html.parser")
-                page_problems = extract_problems_from_page(soup, level)
+                page_text = driver.find_element(By.TAG_NAME, "body").text
+                page_problems = extract_problems_from_text(page_text, level)
 
                 new_problems = [
                     problem for problem in page_problems

@@ -4,7 +4,6 @@ import random
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,31 +19,41 @@ HEADERS = {
 }
 
 
-def find_problem_in_link(link, level):
-    node = link
+def extract_problems_from_page(soup, expected_level):
+    lines = [
+        line.strip()
+        for line in soup.get_text("\n").splitlines()
+        if line.strip()
+    ]
 
-    for _ in range(5):
-        text = " ".join(node.stripped_strings)
-        match = re.search(r"(\d+)\.\s*(.+)", text)
+    problems = []
 
-        if match:
-            problem_id = match.group(1)
-            title = re.sub(r"\s*\[\d+\]\s*$", "", match.group(2)).strip()
+    for index, line in enumerate(lines):
+        match = re.match(r"^(\d+)\.\s*(.+?)(?:\s*\[\d+\])?$", line)
 
-            if title:
-                return {
-                    "id": problem_id,
-                    "title": title,
-                    "level": level,
-                    "url": urljoin(BASE_URL, link.get("href")),
-                }
+        if not match:
+            continue
 
-        node = node.parent
+        problem_id = match.group(1)
+        title = match.group(2).strip()
+        nearby_text = " ".join(lines[index + 1:index + 4])
 
-        if node is None:
-            break
+        if expected_level not in nearby_text:
+            continue
 
-    return None
+        problems.append(
+            {
+                "id": problem_id,
+                "title": title,
+                "level": expected_level,
+                "url": (
+                    f"{BASE_URL}/main/code/problem/problemList.do"
+                    f"?problemTitle={problem_id}"
+                ),
+            }
+        )
+
+    return problems
 
 
 def collect_problems():
@@ -57,7 +66,7 @@ def collect_problems():
             response = requests.get(
                 f"{BASE_URL}/main/code/problem/problemList.do",
                 params={
-                    "pageSize": 100,
+                    "pageSize": 30,
                     "pageIndex": page_index,
                     "problemLevel": level_number,
                 },
@@ -67,17 +76,17 @@ def collect_problems():
             response.raise_for_status()
 
             soup = BeautifulSoup(response.text, "html.parser")
-            page_problems = []
+            page_problems = extract_problems_from_page(soup, level)
 
-            for link in soup.select('a[href*="problemDetail.do"]'):
-                problem = find_problem_in_link(link, level)
+            new_problems = [
+                problem for problem in page_problems
+                if problem["id"] not in problems_by_id
+            ]
 
-                if problem and problem["id"] not in problems_by_id:
-                    problems_by_id[problem["id"]] = problem
-                    page_problems.append(problem)
+            for problem in new_problems:
+                problems_by_id[problem["id"]] = problem
 
-            # 다음 페이지에서 새 문제가 없으면 해당 난이도의 끝입니다.
-            if not page_problems:
+            if not new_problems:
                 break
 
     problems = list(problems_by_id.values())
@@ -105,7 +114,6 @@ def select_problems(problems, history):
     sent_ids = set(history["sent_ids"])
     available = [problem for problem in problems if problem["id"] not in sent_ids]
 
-    # D2~D4 후보를 모두 한 번씩 보냈다면 새 순환을 시작합니다.
     if len(available) < 3:
         history["sent_ids"] = []
         available = problems

@@ -14,27 +14,30 @@ import requests
 WEBHOOK_URL = os.environ.get("MATTERMOST_WEBHOOK_URL")
 
 BASE_DIR = Path(__file__).resolve().parent
-PROBLEMS_FILE = BASE_DIR / "swea_problems.json"
+SWEA_PROBLEMS_FILE = BASE_DIR / "swea_problems.json"
+PROGRAMMERS_PROBLEMS_FILE = BASE_DIR / "programmers_problems.json"
 HISTORY_FILE = BASE_DIR / "history.json"
 
-PROBLEMS_PER_WEEK = 3
+SWEA_PER_WEEK = 2
+PROGRAMMERS_PER_WEEK = 3
+PROBLEMS_PER_WEEK = SWEA_PER_WEEK + PROGRAMMERS_PER_WEEK
 
 
 # ============================================================
 # 문제 목록 불러오기
 # ============================================================
 
-def load_problems():
-    if not PROBLEMS_FILE.exists():
+def _load_problem_file(file_path, default_source, min_count):
+    if not file_path.exists():
         raise FileNotFoundError(
-            f"문제 목록 파일을 찾을 수 없습니다: {PROBLEMS_FILE}"
+            f"문제 목록 파일을 찾을 수 없습니다: {file_path}"
         )
 
-    with PROBLEMS_FILE.open("r", encoding="utf-8") as file:
+    with file_path.open("r", encoding="utf-8") as file:
         problems = json.load(file)
 
     if not isinstance(problems, list):
-        raise ValueError("swea_problems.json의 최상위 구조는 리스트([])여야 합니다.")
+        raise ValueError(f"{file_path.name}의 최상위 구조는 리스트([])여야 합니다.")
 
     valid_problems = []
 
@@ -47,14 +50,30 @@ def load_problems():
         if not required_keys.issubset(problem.keys()):
             continue
 
-        valid_problems.append(problem)
+        item = dict(problem)
+        item.setdefault("source", default_source)
+        valid_problems.append(item)
 
-    if len(valid_problems) < PROBLEMS_PER_WEEK:
+    if len(valid_problems) < min_count:
         raise ValueError(
-            f"사용 가능한 문제가 {PROBLEMS_PER_WEEK}개보다 적습니다."
+            f"{file_path.name}에서 사용 가능한 문제가 {min_count}개보다 적습니다."
         )
 
     return valid_problems
+
+
+def load_problems():
+    swea_problems = _load_problem_file(
+        SWEA_PROBLEMS_FILE,
+        default_source="SWEA",
+        min_count=SWEA_PER_WEEK,
+    )
+    programmers_problems = _load_problem_file(
+        PROGRAMMERS_PROBLEMS_FILE,
+        default_source="Programmers",
+        min_count=PROGRAMMERS_PER_WEEK,
+    )
+    return swea_problems, programmers_problems
 
 
 # ============================================================
@@ -100,10 +119,10 @@ def save_history(history):
 
 
 # ============================================================
-# 이번 주 문제 3개 선택
+# 이번 주 문제 5개 선택 (SWEA 2개 + Programmers 3개)
 # ============================================================
 
-def select_problems(problems, history):
+def _select_from_pool(problems, count, history, source_label):
     sent_ids = set(history["sent_ids"])
 
     available = [
@@ -112,27 +131,35 @@ def select_problems(problems, history):
         if str(problem["id"]) not in sent_ids
     ]
 
-    # 아직 보내지 않은 문제가 3개 이상 있으면
+    # 아직 보내지 않은 문제가 count개 이상 있으면
     # 기존에 보낸 문제를 제외하고 랜덤 선택
-    if len(available) >= PROBLEMS_PER_WEEK:
-        selected = random.sample(
-            available,
-            PROBLEMS_PER_WEEK,
-        )
+    if len(available) >= count:
+        return random.sample(available, count)
 
-        return selected
+    # 남은 문제가 count개 미만이면 해당 플랫폼의 추천 이력을 초기화하고 전체에서 선택
+    print(f"{source_label} 문제를 모두 한 번씩 사용했습니다. {source_label} 추천 이력을 초기화합니다.")
+    pool_ids = {str(problem["id"]) for problem in problems}
+    history["sent_ids"] = [
+        pid for pid in history["sent_ids"] if pid not in pool_ids
+    ]
 
-    # 남은 문제가 3개 미만이면 전체 목록을 다시 사용
-    print("모든 문제를 한 번씩 사용했습니다. 추천 이력을 초기화합니다.")
+    return random.sample(problems, count)
 
-    history["sent_ids"] = []
 
-    selected = random.sample(
-        problems,
-        PROBLEMS_PER_WEEK,
+def select_problems(swea_problems, programmers_problems, history):
+    selected_swea = _select_from_pool(
+        swea_problems,
+        SWEA_PER_WEEK,
+        history,
+        "SWEA",
     )
-
-    return selected
+    selected_programmers = _select_from_pool(
+        programmers_problems,
+        PROGRAMMERS_PER_WEEK,
+        history,
+        "Programmers",
+    )
+    return selected_swea + selected_programmers
 
 
 # ============================================================
@@ -141,20 +168,22 @@ def select_problems(problems, history):
 
 def make_message(problems):
     lines = [
-        "## 📚 이번 주 IM 대비 SWEA 랜덤 3문제",
+        "## 📚 이번 주 SWEA & 프로그래머스 랜덤 5문제",
         "",
     ]
 
     for index, problem in enumerate(problems, start=1):
+        source = problem.get("source", "SWEA")
         lines.append(
-            f'{index}. **[{problem["level"]}] '
+            f'{index}. **[{source} / {problem["level"]}] '
             f'[{problem["title"]}]({problem["url"]})**'
         )
 
     lines.extend(
         [
             "",
-            "D2~D4 중에서 골랐어요. 이번 주 안에 도전해봅시다! 💪",
+            "SWEA(D2~D4) 2문제와 프로그래머스(Python Lv.0~1) 3문제를 골랐어요!",
+            "🔥 **5일 동안 최소 한 개는 무조건 풀기!** 이번 주도 화이팅해봅시다! 💪",
         ]
     )
 
@@ -186,11 +215,12 @@ def send_to_mattermost(message):
 
 def main():
     try:
-        problems = load_problems()
+        swea_problems, programmers_problems = load_problems()
         history = load_history()
 
         selected = select_problems(
-            problems,
+            swea_problems,
+            programmers_problems,
             history,
         )
 
@@ -207,16 +237,19 @@ def main():
 
         save_history(history)
 
+        total_count = len(swea_problems) + len(programmers_problems)
         print(
-            f"전체 {len(problems)}개 문제 중 "
+            f"전체 {total_count}개 문제(SWEA {len(swea_problems)}개, "
+            f"Programmers {len(programmers_problems)}개) 중 "
             f"{len(selected)}개를 Mattermost에 전송했습니다."
         )
 
         print("이번 주 추천 문제:")
 
         for problem in selected:
+            source = problem.get("source", "SWEA")
             print(
-                f'- [{problem["level"]}] '
+                f'- [{source} / {problem["level"]}] '
                 f'{problem["id"]}: {problem["title"]}'
             )
 
